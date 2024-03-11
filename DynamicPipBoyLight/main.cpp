@@ -19,25 +19,36 @@ NiUpdateData kSSNUpdateData = NiUpdateData(0.f, false, false, false, false, true
 
 UInt32* (__cdecl* GetPipboyManager)() = (UInt32 * (__cdecl*)())0x705990;
 bool(__thiscall* IsLightActive)(UInt32* pPipBoyManager) = (bool(__thiscall*)(UInt32*))0x967700;
+bool(__stdcall* IsPipBoyOpen)() = (bool(__stdcall*)())0x7079B0;
 
-static NiPointer<NiNode>		spScreenNode	= nullptr;
-static NiPointer<NiAVObject>	spPipBoyLight	= nullptr;
-static Actor*					pEffectActor	= nullptr;
-static bool						bPrevIsThirdPerson = 0;
-static bool						bPrevWeapState = 0;
+static NiPointer<NiNode>		spScreenNode		= nullptr;
+static NiPointer<NiAVObject>	spPipBoyLight		= nullptr;
+static Actor*					pEffectActor		= nullptr;
+static bool						bPrevIsThirdPerson	= false;
+static bool						bPrevWeapState		= false;
+static NiPoint3					kPipBoyLightPos		= NiPoint3(0.0f, 0.0f, 0.0f);
 
 NiNode* PlayerCharacter::GetPipBoyNode(const bool abFirstPerson) const {
-	static NiFixedString string = NiFixedString("PipboyLightEffect");
-	NiNode* playerNode = GetNode(abFirstPerson);
-	spScreenNode = static_cast<NiNode*>(playerNode->GetObjectByName(string));
-	return spScreenNode.m_pObject ? spScreenNode.m_pObject : playerNode;
+	static NiFixedString string = NiFixedString("PipboyLightEffect:0");
+
+	NiNode* pPlayerNode = GetNode(abFirstPerson);
+	if (!spScreenNode || spScreenNode->m_uiRefCount < 2) {
+		spScreenNode = nullptr;
+		NiGeometry* pLightGeometry = static_cast<NiGeometry*>(pPlayerNode->GetObjectByName(string));
+		if (pLightGeometry) {
+			spScreenNode = pLightGeometry->GetParent();
+			NiGeometryData* pGeomData = pLightGeometry->GetModelData();
+			if (pGeomData)
+				kPipBoyLightPos = pGeomData->m_kBound.m_kCenter;
+		}
+	}
+
+	return spScreenNode.m_pObject ? spScreenNode.m_pObject : pPlayerNode;
 }
 
 static NiNode* __fastcall GetPipBoyNodeHook(PlayerCharacter* apThis, void*, bool abFirstPerson) {
 	return apThis->GetPipBoyNode(!apThis->bThirdPerson);
 }
-
-
 
 static Actor* __fastcall MagicTarget_GetParent(UInt32* apThis) {
 	pEffectActor = ThisStdCall<Actor*>(0x822B40, apThis); // MagicTarget::GetParent itself
@@ -46,10 +57,10 @@ static Actor* __fastcall MagicTarget_GetParent(UInt32* apThis) {
 
 static void __fastcall SetLocalTranslate(NiNode* apThis, void*, float x, float y, float z) {
 	if (pEffectActor == PlayerCharacter::GetSingleton()) {
-		apThis->m_kLocal.m_Translate.x = 0.0f;
-		apThis->m_kLocal.m_Translate.y = 0.0f;
-		apThis->m_kLocal.m_Translate.z = 10.0f;
+		static NiFixedString lightName = NiFixedString("PipboyLight");
+		apThis->m_kLocal.m_Translate = kPipBoyLightPos;
 		spPipBoyLight = apThis;
+		spPipBoyLight->m_kName = lightName;
 		pEffectActor = nullptr;
 	}
 	else {
@@ -59,17 +70,25 @@ static void __fastcall SetLocalTranslate(NiNode* apThis, void*, float x, float y
 	}
 }
 
+static bool HandlePipBoy(PlayerCharacter* apPlayer) {
+	bool bIsThirdPerson = apPlayer->bThirdPerson;
+	if (!IsPipBoyOpen())
+		return bIsThirdPerson;
+
+	return true;
+}
+
 static void UpdateLightSwitch() {
 	if (!IsLightActive(GetPipboyManager()) || spPipBoyLight.m_pObject == nullptr)
 		return;
 
-	if (spPipBoyLight->m_uiRefCount == 1 || spPipBoyLight->m_uiRefCount == 0) {
+	if (spPipBoyLight->m_uiRefCount < 2) {
 		spPipBoyLight = nullptr;
 		return;
 	}
 
 	PlayerCharacter* pPlayer = PlayerCharacter::GetSingleton();
-	bool bIsThirdPerson = pPlayer->bThirdPerson;
+	bool bIsThirdPerson = HandlePipBoy(pPlayer);
 	bool bWeaponOut = pPlayer->GetIsWeaponOut();
 
 	if (bIsThirdPerson == bPrevIsThirdPerson && bPrevWeapState == bWeaponOut || (bIsThirdPerson && bPrevIsThirdPerson))
@@ -79,9 +98,10 @@ static void UpdateLightSwitch() {
 	bPrevWeapState = bWeaponOut;
 
 	// Determine parent node for light
-	NiNode* parentNode = !bWeaponOut ? pPlayer->GetPipBoyNode(false) : pPlayer->GetPipBoyNode(!bIsThirdPerson);
-	parentNode->AttachChild(spPipBoyLight, 1);
-	parentNode->Update(kSSNUpdateData);
+	NiNode* pParentNode = !bWeaponOut ? pPlayer->GetPipBoyNode(false) : pPlayer->GetPipBoyNode(!bIsThirdPerson);
+	pParentNode->AttachChild(spPipBoyLight, 1);
+	spPipBoyLight->m_kLocal.m_Translate = kPipBoyLightPos;
+	pParentNode->Update(kSSNUpdateData);
 }
 
 static void MessageHandler(NVSEMessagingInterface::Message* msg)

@@ -101,6 +101,10 @@ public:
 class NiPoint3 {
 public:
 	float x, y, z;
+
+	NiPoint3 operator-(const NiPoint3& akPoint) const {
+		return NiPoint3(x - akPoint.x, y - akPoint.y, z - akPoint.z);
+	}
 };
 
 class NiColorA {
@@ -406,7 +410,7 @@ public:
 
 	NiNode*							m_pkParent;
 	bhkNiCollisionObject*			m_spCollisionObject;
-	NiBound*						m_kWorldBound;
+	NiBound*						m_pWorldBound;
 	NiTListBase<NiProperty*>		m_kPropertyList;
 	Bitfield32						m_uiFlags;
 	NiTransform						m_kLocal;
@@ -1386,5 +1390,9 @@ public:
 	}
 
 	NiNode* GetPipBoyNode(const bool abFirstPerson) const;
+
+	bool HasPipBoyOpen() const {
+		return ThisStdCall<bool>(0x967AE0, this);
+	}
 };
 ASSERT_OFFSET(PlayerCharacter, bThirdPerson, 0x64B);
