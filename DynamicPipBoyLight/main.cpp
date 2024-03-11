@@ -10,7 +10,7 @@ IDebugLog	   gLog("logs\\MobilePipBoyLight.log");
 bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 {
 	info->infoVersion = PluginInfo::kInfoVersion;
-	info->name = "Mobile Pip-Boy Light";
+	info->name = "MobilePipBoyLight";
 	info->version = 200;
 	return true;
 }
