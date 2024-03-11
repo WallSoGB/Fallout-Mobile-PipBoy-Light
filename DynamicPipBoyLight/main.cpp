@@ -11,7 +11,7 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 {
 	info->infoVersion = PluginInfo::kInfoVersion;
 	info->name = "Mobile Pip-Boy Light";
-	info->version = 110;
+	info->version = 200;
 	return true;
 }
 
