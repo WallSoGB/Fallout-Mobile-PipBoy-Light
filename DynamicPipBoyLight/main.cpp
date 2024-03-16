@@ -7,8 +7,7 @@
 NVSEInterface* g_nvseInterface{};
 IDebugLog	   gLog("logs\\MobilePipBoyLight.log");
 
-bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
-{
+bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info) {
 	info->infoVersion = PluginInfo::kInfoVersion;
 	info->name = "MobilePipBoyLight";
 	info->version = 200;
@@ -32,15 +31,12 @@ NiNode* PlayerCharacter::GetPipBoyNode(const bool abFirstPerson) const {
 	static NiFixedString string = NiFixedString("PipboyLightEffect:0");
 
 	NiNode* pPlayerNode = GetNode(abFirstPerson);
-	if (!spScreenNode || spScreenNode->m_uiRefCount < 2) {
-		spScreenNode = nullptr;
-		NiGeometry* pLightGeometry = static_cast<NiGeometry*>(pPlayerNode->GetObjectByName(string));
-		if (pLightGeometry) {
-			spScreenNode = pLightGeometry->GetParent();
-			NiGeometryData* pGeomData = pLightGeometry->GetModelData();
-			if (pGeomData)
-				kPipBoyLightPos = pGeomData->m_kBound.m_kCenter;
-		}
+	NiGeometry* pLightGeometry = static_cast<NiGeometry*>(pPlayerNode->GetObjectByName(string));
+	if (pLightGeometry) {
+		spScreenNode = pLightGeometry->GetParent();
+		NiGeometryData* pGeomData = pLightGeometry->GetModelData();
+		if (pGeomData)
+			kPipBoyLightPos = pGeomData->m_kBound.m_kCenter;
 	}
 
 	return spScreenNode.m_pObject ? spScreenNode.m_pObject : pPlayerNode;
@@ -71,9 +67,8 @@ static void __fastcall SetLocalTranslate(NiNode* apThis, void*, float x, float y
 }
 
 static bool HandlePipBoy(PlayerCharacter* apPlayer) {
-	bool bIsThirdPerson = apPlayer->bThirdPerson;
 	if (!IsPipBoyOpen())
-		return bIsThirdPerson;
+		return apPlayer->bThirdPerson;
 
 	return true;
 }
@@ -99,7 +94,7 @@ static void UpdateLightSwitch() {
 
 	// Determine parent node for light
 	NiNode* pParentNode = !bWeaponOut ? pPlayer->GetPipBoyNode(false) : pPlayer->GetPipBoyNode(!bIsThirdPerson);
-	pParentNode->AttachChild(spPipBoyLight, 1);
+	pParentNode->AttachChild(spPipBoyLight, true);
 	spPipBoyLight->m_kLocal.m_Translate = kPipBoyLightPos;
 	pParentNode->Update(kSSNUpdateData);
 }
@@ -109,7 +104,7 @@ static void MessageHandler(NVSEMessagingInterface::Message* msg)
 	if (msg->type == NVSEMessagingInterface::kMessage_PreLoadGame) {
 		spPipBoyLight = nullptr;
 	}
-	if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop) {
+	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop) {
 		UpdateLightSwitch();
 	}
 }
