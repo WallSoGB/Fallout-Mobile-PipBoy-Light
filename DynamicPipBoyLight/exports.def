@@ -1,4 +1,4 @@
-LIBRARY	"DynamicPipBoy Light"
+LIBRARY	"MobilePipBoyLight"
 EXPORTS
 NVSEPlugin_Query
 NVSEPlugin_Load

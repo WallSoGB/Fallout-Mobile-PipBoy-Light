@@ -63,13 +63,19 @@ class TESObjectREFR;
 class NiFixedString {
 public:
 	NiFixedString() { m_kHandle = nullptr; }
-	NiFixedString(const char* apString) { { ThisStdCall(0x438170, this, apString); } }
-	~NiFixedString() { ThisStdCall(0x4381B0, this); };
+	NiFixedString(const char* apString) : m_kHandle(0) {
+		ThisStdCall(0x438170, this, apString); 
+	}
+	~NiFixedString() { CdeclCall(0x4381D0, this); };
 
 	char* m_kHandle;
 
 	NiFixedString& operator=(const char* apString) {
 		return ThisStdCall<NiFixedString&>(0xA2E750, this, apString);
+	}
+
+	NiFixedString& operator=(NiFixedString& arString) {
+		return ThisStdCall<NiFixedString&>(0x48AF40, this, &arString);
 	}
 };
 
@@ -1396,3 +1402,34 @@ public:
 	}
 };
 ASSERT_OFFSET(PlayerCharacter, bThirdPerson, 0x64B);
+
+class ShadowSceneLight : public NiRefObject {
+public:
+	UInt32					filler[62];
+	NiPoint3				kPointPosition;
+};
+ASSERT_OFFSET(ShadowSceneLight, kPointPosition, 0x100);
+
+class ShadowSceneNode : public NiNode {
+public:
+	UInt32		filler[33];
+	bool		bDisableLightUpdate;
+
+	ShadowSceneLight* GetLight(NiAVObject* apLight) const {
+		return ThisStdCall<ShadowSceneLight*>(0xB5B4A0, this, apLight);
+	}
+
+	void UpdateLightGeometryList(ShadowSceneLight* apLight) {
+		ThisStdCall(0xB5D300, this, apLight);
+	}
+};
+
+ASSERT_OFFSET(ShadowSceneNode, bDisableLightUpdate, 0x130);
+
+
+class BSShaderManager {
+public:
+	static ShadowSceneNode* GetShadowSceneNode(UInt32 aeType) {
+		return ((ShadowSceneNode**)0x11F91C8)[aeType];
+	}
+};
