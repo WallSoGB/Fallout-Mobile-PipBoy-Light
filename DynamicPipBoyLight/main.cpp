@@ -1,8 +1,6 @@
 #include "nvse/PluginAPI.h"
 #include <SafeWrite.h>
 #include <GameData.hpp>
-#include <fstream>
-#include <string>
 
 NVSEInterface* g_nvseInterface{};
 IDebugLog	   gLog("logs\\MobilePipBoyLight.log");
@@ -10,7 +8,7 @@ IDebugLog	   gLog("logs\\MobilePipBoyLight.log");
 bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info) {
 	info->infoVersion = PluginInfo::kInfoVersion;
 	info->name = "MobilePipBoyLight";
-	info->version = 200;
+	info->version = 210;
 	return true;
 }
 
