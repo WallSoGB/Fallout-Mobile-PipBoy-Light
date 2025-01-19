@@ -3,55 +3,50 @@
 #include <GameData.hpp>
 
 NVSEInterface* g_nvseInterface{};
-IDebugLog	   gLog("logs\\MobilePipBoyLight.log");
-
-bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info) {
-	info->infoVersion = PluginInfo::kInfoVersion;
-	info->name = "MobilePipBoyLight";
-	info->version = 210;
-	return true;
-}
 
 NiUpdateData kSSNUpdateData = NiUpdateData(0.f, false, false, false, false, true);
 
 UInt32* (__cdecl* GetPipboyManager)() = (UInt32 * (__cdecl*)())0x705990;
 bool(__thiscall* IsLightActive)(UInt32* pPipBoyManager) = (bool(__thiscall*)(UInt32*))0x967700;
+void(__thiscall* InitScreenLight)(UInt32* pPipBoyManager) = (void(__thiscall*)(UInt32*))0x7F9840;
 bool(__stdcall* IsPipBoyOpen)() = (bool(__stdcall*)())0x7079B0;
-bool(__stdcall* IsMenuMode)() = (bool(__stdcall*)())0x702360;
-bool(__stdcall* IsContainerMode)() = (bool(__stdcall*)())0x705050;
-bool* const bIsConsoleOpen = (bool*)0x11DEA2E;
 
 static NiPointer<NiNode>		spScreenNode		= nullptr;
 static NiPointer<NiAVObject>	spPipBoyLight		= nullptr;
 static Actor*					pEffectActor		= nullptr;
 static bool						bPrevIsThirdPerson	= false;
 static bool						bPrevWeapState		= false;
-static bool						bLastFrameMenuMode	= false;
+static UInt32					uiLastArmorID		= 0;
 static NiPoint3					kPipBoyLightPos		= NiPoint3(0.0f, 0.0f, 0.0f);
-static NiPoint3					kLastWorldPos		= NiPoint3(0.0f, 0.0f, 0.0f);
-
-static bool IsInMenu() {
-	return IsContainerMode() || IsMenuMode() || *bIsConsoleOpen;
-}
 
 // Gets the player's pipboy node
 NiNode* PlayerCharacter::GetPipBoyNode(const bool abFirstPerson) const {
-	static NiFixedString kScreenName = NiFixedString("PipboyLightEffect:0");
-
 	NiNode* pPlayerNode = GetNode(abFirstPerson);
-	NiGeometry* pLightGeometry = static_cast<NiGeometry*>(pPlayerNode->GetObjectByName(kScreenName));
+	NiGeometry* pLightGeometry = static_cast<NiGeometry*>(BSUtilities::GetObjectByName(pPlayerNode, "PipboyLightEffect:0"));
 	if (pLightGeometry) {
 		spScreenNode = pLightGeometry->GetParent();
 		NiGeometryData* pGeomData = pLightGeometry->GetModelData();
 		if (pGeomData)
 			kPipBoyLightPos = pGeomData->m_kBound.m_kCenter;
 	}
+	else {
+		NiAVObject* pHand = BSUtilities::GetObjectByName(pPlayerNode, "Bip01 Weapon2");
+		if (!pHand)
+			pHand = BSUtilities::GetObjectByName(pPlayerNode, "Bip01 L Hand");
 
-	return spScreenNode.m_pObject ? spScreenNode.m_pObject : pPlayerNode;
+		if (pHand) {
+			spScreenNode = pHand->IsNode();
+			kPipBoyLightPos = NiPoint3(0.0f, 0.0f, 0.0f);
+		}
+	}
+
+	NiNode* pOutputNode = spScreenNode.m_pObject ? spScreenNode.m_pObject : pPlayerNode;
+
+	return pOutputNode;
 }
 
 static NiNode* __fastcall GetPipBoyNodeHook(PlayerCharacter* apThis, void*, bool abFirstPerson) {
-	return apThis->GetPipBoyNode(!apThis->bThirdPerson);
+	return apThis->GetPipBoyNode(!apThis->bThirdPerson);;
 }
 
 // Gets the parent actor of the magic target
@@ -76,6 +71,19 @@ static void __fastcall SetLocalTranslate(NiNode* apThis, void*, float x, float y
 	}
 }
 
+static bool HandleArmorChange(const PlayerCharacter* apPlayer) {
+	ItemChange* pArmor = apPlayer->GetEquippedArmor(false);
+	UInt32 uiArmorID = 0;
+	if (pArmor && pArmor->pObject)
+		uiArmorID = pArmor->pObject->GetFormID();
+
+	bool bArmorChanged = uiArmorID != uiLastArmorID;
+
+	uiLastArmorID = uiArmorID;
+
+	return bArmorChanged;
+}
+
 // Handles the pipboy state
 // If pipboy is open, returns true in order to use 3rd person animation to avoid sudden light movement
 static bool HandlePipBoy(const PlayerCharacter* apPlayer) {
@@ -86,94 +94,98 @@ static bool HandlePipBoy(const PlayerCharacter* apPlayer) {
 static void SetPipBoyParent(const PlayerCharacter* apPlayer, const bool abThirdPerson, const bool abWeaponOut) {
 	// Determine parent node for light
 	NiNode* pParentNode = !abWeaponOut ? apPlayer->GetPipBoyNode(false) : apPlayer->GetPipBoyNode(!abThirdPerson);
+	if (pParentNode == nullptr)
+		return;
+
 	pParentNode->AttachChild(spPipBoyLight, true);
 	spPipBoyLight->m_kLocal.m_Translate = kPipBoyLightPos;
-	pParentNode->Update(kSSNUpdateData);
-	spPipBoyLight->Update(kSSNUpdateData);
-}
-
-// Handles menu mode transition when player enters/exits menu mode
-// This is only needed for the first person mode, because the light is not getting correct world transform in menu mode,
-// leading to jarring light movement or it missing completely
-static void HandleMenuMode(const PlayerCharacter* apPlayer, const bool abThirdPerson, const bool abWeaponOut) {
-	if (spPipBoyLight.m_pObject == nullptr)
-		return;
-
-	bool bInMenu = IsInMenu();
-
-	if (!bInMenu && !abThirdPerson)
-		kLastWorldPos = spPipBoyLight->m_kWorld.m_Translate;
-
-	// Detach the light if player enters menu mode
-	if (bInMenu && !abThirdPerson && !bLastFrameMenuMode) {
-		NiNode* pParentNode = spPipBoyLight->GetParent();
-		if (pParentNode)
-			pParentNode->DetachChildAlt(spPipBoyLight);
-
-		spPipBoyLight->m_kLocal.m_Translate = kLastWorldPos;
-		spPipBoyLight->Update(kSSNUpdateData);
-
-		ShadowSceneNode* pSSN = BSShaderManager::GetShadowSceneNode(0);
-		ShadowSceneLight* pSSL = pSSN->GetLight(spPipBoyLight);
-		if (pSSL) {
-			pSSL->kPointPosition = kLastWorldPos;
-			pSSN->UpdateLightGeometryList(pSSL);
-		}
-
-		bLastFrameMenuMode = true;
-		return;
-	}
-
-	// Reattach the light if player exits menu mode
-	if (!bInMenu && bLastFrameMenuMode && spPipBoyLight->GetParent() == nullptr) {
-		SetPipBoyParent(apPlayer, abThirdPerson, abWeaponOut);
-
-		bLastFrameMenuMode = false;
-	}
+	pParentNode->UpdateTransformAndBounds(kSSNUpdateData);
+	spPipBoyLight->UpdateTransformAndBounds(kSSNUpdateData);
 }
 
 // Updates the light based on the player's and menu state
 static void UpdateLightSwitch() {
-	if (!IsLightActive(GetPipboyManager()) || spPipBoyLight.m_pObject == nullptr)
+	if (spPipBoyLight.m_pObject == nullptr)
 		return;
 
-	if (spPipBoyLight->m_uiRefCount < 2) {
+	if (!IsLightActive(GetPipboyManager()) || (spPipBoyLight.m_pObject && spPipBoyLight->m_uiRefCount < 2)) {
 		spPipBoyLight = nullptr;
 		return;
 	}
 
 	PlayerCharacter* pPlayer = PlayerCharacter::GetSingleton();
+	bool bArmorChanged = HandleArmorChange(pPlayer);
 	bool bIsThirdPerson = HandlePipBoy(pPlayer);
 	bool bWeaponOut = pPlayer->GetIsWeaponOut();
 
-	HandleMenuMode(pPlayer, bIsThirdPerson, bWeaponOut);
+	if (!bArmorChanged) {
+		if (bIsThirdPerson == bPrevIsThirdPerson && bPrevWeapState == bWeaponOut || (bIsThirdPerson && bPrevIsThirdPerson))
+			return;
+	}
 
-	if (bIsThirdPerson == bPrevIsThirdPerson && bPrevWeapState == bWeaponOut || (bIsThirdPerson && bPrevIsThirdPerson))
-		return;
-
-	bPrevIsThirdPerson = bIsThirdPerson;
-	bPrevWeapState = bWeaponOut;
+	bPrevIsThirdPerson	= bIsThirdPerson;
+	bPrevWeapState		= bWeaponOut;
 
 	SetPipBoyParent(pPlayer, bIsThirdPerson, bWeaponOut);
 }
 
 static void MessageHandler(NVSEMessagingInterface::Message* msg) {
-	if (msg->type == NVSEMessagingInterface::kMessage_PreLoadGame) {
+	switch (msg->type){
+	case NVSEMessagingInterface::kMessage_PostLoad:
+		{
+			const PluginInfo* pInfo = ((NVSECommandTableInterface*)g_nvseInterface->QueryInterface(kInterface_CommandTable))->GetPluginInfoByName("ViewmodelShadingFix");
+			if (pInfo && pInfo->version < 220) {
+				MessageBoxA(nullptr, "\"Viewmodel Shading Fix\" version 2.2.0 or higher is required for this plugin to work.", "Mobile Pip-Boy Light", MB_OK | MB_ICONERROR);
+			}
+			else {
+				WriteRelCall(0x80E9B2, MagicTarget_GetParent);
+				WriteRelCall(0x80EC4F, SetLocalTranslate);
+				WriteRelCall(0x80EC67, GetPipBoyNodeHook);
+			}
+		}
+		break;
+	case NVSEMessagingInterface::kMessage_PreLoadGame:
 		spPipBoyLight = nullptr;
-	}
-	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop) {
+		break;
+	case NVSEMessagingInterface::kMessage_PostLoadGame:
+		HandleArmorChange(PlayerCharacter::GetSingleton());
+		break;
+	case NVSEMessagingInterface::kMessage_MainGameLoop:
 		UpdateLightSwitch();
+		break;
+	default:
+		break;
 	}
 }
 
+bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info) {
+	info->infoVersion = PluginInfo::kInfoVersion;
+	info->name = "MobilePipBoyLight";
+	info->version = 220;
+	return !nvse->isEditor;
+}
+
 bool NVSEPlugin_Load(NVSEInterface* nvse) {
+	HMODULE hModule = GetModuleHandle("Viewmodel Shading Fix.dll");
+	if (!hModule) {
+		MessageBoxA(nullptr, "\"Viewmodel Shading Fix\" is required for this plugin to work.", "Mobile Pip-Boy Light", MB_OK | MB_ICONERROR);
+		return false;
+	}
+
 	if (!nvse->isEditor) {
-		WriteRelCall(0x80E9B2, MagicTarget_GetParent);
-		WriteRelCall(0x80EC4F, SetLocalTranslate);
-		WriteRelCall(0x80EC67, GetPipBoyNodeHook);
+		g_nvseInterface = nvse;
 
 		((NVSEMessagingInterface*)nvse->QueryInterface(kInterface_Messaging))->RegisterListener(nvse->GetPluginHandle(), "NVSE", MessageHandler);
 	}
 
 	return true;
+}
+
+BOOL WINAPI DllMain(
+	HANDLE  hDllHandle,
+	DWORD   dwReason,
+	LPVOID  lpreserved
+)
+{
+	return TRUE;
 }

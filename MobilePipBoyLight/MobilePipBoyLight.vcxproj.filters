@@ -4,24 +4,17 @@
     <Filter Include="nvse">
       <UniqueIdentifier>{92a4f350-f2ec-4fca-bdd3-927732d91b34}</UniqueIdentifier>
     </Filter>
-    <Filter Include="external">
-      <UniqueIdentifier>{0495beab-da06-4b05-b7c7-6644ad0ba1bd}</UniqueIdentifier>
-    </Filter>
     <Filter Include="internal">
       <UniqueIdentifier>{f0d6764c-1d63-4ccc-86d0-606a84dea818}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="dllmain.c" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="..\nvse\nvse\SafeWrite.cpp">
       <Filter>nvse</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\nlohmann\json.hpp">
-      <Filter>external</Filter>
-    </ClInclude>
     <ClInclude Include="GameData.hpp">
       <Filter>internal</Filter>
     </ClInclude>
